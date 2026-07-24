@@ -4,6 +4,8 @@ const { fastifyCors } = require('@fastify/cors');
 
 const usersRoutes = require('./routes/users');
 const drawRoutes = require('./routes/draw');
+const authRoutes = require('./routes/auth');
+const adminRoutes = require('./routes/admin');
 
 async function buildApp() {
   await fastify.register(fastifyCors, {
@@ -12,6 +14,8 @@ async function buildApp() {
   });
   await fastify.register(usersRoutes, { prefix: '/users' });
   await fastify.register(drawRoutes, { prefix: '/draw' });
+  await fastify.register(authRoutes, { prefix: '/auth' });
+  await fastify.register(adminRoutes, { prefix: '/admin' });
   return fastify;
 }
 
