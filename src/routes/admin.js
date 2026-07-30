@@ -111,24 +111,23 @@ async function adminRoutes(fastify, options) {
     return reply.status(200).send(result.rows);
   });
 
-  // Search by period
+  // Search by date
   fastify.get('/search/periodo', { preHandler: authenticate }, async (request, reply) => {
-    const { start, end } = request.query;
+    const { date } = request.query;
 
-    if (!start || !end) {
-      return reply.status(400).send({ error: 'Start and end dates are required' });
+    if (!date) {
+      return reply.status(400).send({ error: 'Date is required' });
     }
 
     const result = await pool.query(`
-      SELECT round, COUNT(*) AS participants, MIN(drawn_at) AS drawn_at
+      SELECT round, position, name, manager, creci, drawn_at
       FROM draws
-      WHERE drawn_at BETWEEN $1 AND $2
-      GROUP BY round
-      ORDER BY round DESC
-    `, [start, end]);
+      WHERE drawn_at::date = $1::date
+      ORDER BY round DESC, position ASC
+    `, [date]);
 
     if (result.rows.length === 0) {
-      return reply.status(404).send({ error: 'No results found' });
+      return reply.status(404).send({ error: 'Sem sorteios na data buscada' });
     }
 
     return reply.status(200).send(result.rows);
@@ -155,6 +154,75 @@ async function adminRoutes(fastify, options) {
 
     return reply.status(200).send(result.rows);
   });
+
+  
+// Evolução de participantes por rodada
+  fastify.get('/charts/evolution', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT round, COUNT(*) AS participants
+      FROM draws
+      GROUP BY round
+      ORDER BY round ASC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Participação por gerente
+  fastify.get('/charts/managers', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT manager, COUNT(*) AS participations
+      FROM draws
+      GROUP BY manager
+      ORDER BY participations DESC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Distribuição de posições top 3
+  fastify.get('/charts/positions', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT name,
+        COUNT(*) FILTER (WHERE position = 1) AS first,
+        COUNT(*) FILTER (WHERE position = 2) AS second,
+        COUNT(*) FILTER (WHERE position = 3) AS third
+      FROM draws
+      GROUP BY name
+      ORDER BY first DESC
+      LIMIT 10
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Sorteios por dia da semana
+  fastify.get('/charts/weekdays', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT TO_CHAR(drawn_at AT TIME ZONE 'America/Sao_Paulo', 'Day') AS weekday,
+      EXTRACT(DOW FROM drawn_at AT TIME ZONE 'America/Sao_Paulo') AS day_number,
+      COUNT(DISTINCT round) AS draws
+      FROM draws
+      GROUP BY weekday, day_number
+      ORDER BY day_number ASC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Assiduidade por corretor
+  fastify.get('/charts/attendance', { preHandler: authenticate }, async (request, reply) => {
+    const totalRounds = await pool.query('SELECT COUNT(DISTINCT round) AS total FROM draws');
+    const total = totalRounds.rows[0].total;
+
+    const result = await pool.query(`
+      SELECT name, COUNT(*) AS participations,
+      ROUND(COUNT(*) * 100.0 / $1, 1) AS attendance_rate
+      FROM draws
+      GROUP BY name
+      ORDER BY attendance_rate DESC
+      LIMIT 10
+    `, [total]);
+
+    return reply.status(200).send(result.rows);
+  });
 }
+
 
 module.exports = adminRoutes;
