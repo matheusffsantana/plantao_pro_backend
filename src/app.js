@@ -1,4 +1,6 @@
-require('dotenv').config();
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').config();
+}
 const fastify = require('fastify')({ logger: false });
 const { fastifyCors } = require('@fastify/cors');
 
@@ -9,7 +11,9 @@ const adminRoutes = require('./routes/admin');
 
 async function buildApp() {
   await fastify.register(fastifyCors, {
-    origin: 'http://localhost:5173',
+    origin: process.env.NODE_ENV === 'production'
+      ? 'https://plantao-pro-frontend.vercel.app'
+      : 'http://localhost:5173',
     methods: ['GET', 'POST', 'DELETE']
   });
   await fastify.register(usersRoutes, { prefix: '/users' });
