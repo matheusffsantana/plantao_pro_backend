@@ -222,6 +222,87 @@ async function adminRoutes(fastify, options) {
 
     return reply.status(200).send(result.rows);
   });
+
+  // Average position per corretor
+  fastify.get('/insights/avg-position', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT name, manager,
+        COUNT(*) AS participations,
+        ROUND(AVG(position), 1) AS avg_position,
+        MIN(position) AS best_position,
+        MAX(position) AS worst_position
+      FROM draws
+      GROUP BY name, manager
+      ORDER BY avg_position ASC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // New vs returning corretores per round
+  fastify.get('/insights/new-vs-returning', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      SELECT d.round,
+        COUNT(*) AS total,
+        COUNT(CASE WHEN prev.name IS NULL THEN 1 END) AS new_corretores,
+        COUNT(CASE WHEN prev.name IS NOT NULL THEN 1 END) AS returning_corretores
+      FROM draws d
+      LEFT JOIN (
+        SELECT DISTINCT name, round FROM draws
+      ) prev ON prev.name = d.name AND prev.round < d.round
+      GROUP BY d.round
+      ORDER BY d.round ASC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Participation streaks
+  fastify.get('/insights/streaks', { preHandler: authenticate }, async (request, reply) => {
+    const result = await pool.query(`
+      WITH rounds AS (
+        SELECT DISTINCT round FROM draws ORDER BY round
+      ),
+      corretor_rounds AS (
+        SELECT DISTINCT name, manager, round FROM draws
+      ),
+      streaks AS (
+        SELECT name, manager, COUNT(*) AS consecutive_rounds
+        FROM (
+          SELECT name, manager, round,
+            round - ROW_NUMBER() OVER (PARTITION BY name ORDER BY round) AS grp
+          FROM corretor_rounds
+        ) s
+        GROUP BY name, manager, grp
+      )
+      SELECT name, manager, MAX(consecutive_rounds) AS max_streak
+      FROM streaks
+      GROUP BY name, manager
+      ORDER BY max_streak DESC
+    `);
+    return reply.status(200).send(result.rows);
+  });
+
+  // Ranking by period
+  fastify.get('/insights/ranking-period', { preHandler: authenticate }, async (request, reply) => {
+    const { start, end } = request.query;
+
+    if (!start || !end) {
+      return reply.status(400).send({ error: 'Start and end dates are required' });
+    }
+
+    const result = await pool.query(`
+      SELECT name, manager, COUNT(*) AS participations
+      FROM draws
+      WHERE drawn_at BETWEEN $1::date AND ($2::date + INTERVAL '1 day')
+      GROUP BY name, manager
+      ORDER BY participations DESC
+    `, [start, end]);
+
+    if (result.rows.length === 0) {
+      return reply.status(404).send({ error: 'Sem dados para o período selecionado' });
+    }
+
+    return reply.status(200).send(result.rows);
+  });
 }
 
 
