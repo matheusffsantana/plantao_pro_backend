@@ -33,6 +33,14 @@ async function usersRoutes(fastify, options) {
         return reply.status(200).send({ message: 'Users list reset successfully'})
     })
 
+    // Get last registration date
+  fastify.get('/last-date', async (request, reply) => {
+    const result = await pool.query(
+      'SELECT MAX(registered_at) AS last_date FROM users'
+    );
+    return reply.status(200).send(result.rows[0]);
+  });
+
 }
 
 module.exports = usersRoutes
